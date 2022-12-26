@@ -1,13 +1,32 @@
 #!/bin/sh
 
 main() {
-	update_system
+	#update_system
+	#disable_wifi
 }
 
 update_system() {
-	asroot apt update
+	print "Updating Package lists... "
+	silent_exec asroot apt update
+	println "Done"
+
 	apt list --upgradable
 	asroot apt full-upgrade
+}
+
+disable_wifi() {
+	print "Disabling WiFi... "
+	asroot systemctl disable wpa_supplicant
+	if grep -q "dtoverlay=disable-wifi" /boot/config.txt; then
+		println
+		log_info "WiFi already disabled."
+	elif [ -x /boot/config.txt.pxe.bak ]; then
+		println
+		log_error "Backup of config.txt file at /boot/config.txt.pxe.bak already exists. Please examine and remove to be able to proceed."
+	else
+		asroot sed -i.pxe.bak '/# Additional overlays and parameters are documented \/boot\/overlays\/README/a dtoverlay=disable-wifi' /boot/config.txt
+		println "Done"
+	fi
 }
 
 install() {
