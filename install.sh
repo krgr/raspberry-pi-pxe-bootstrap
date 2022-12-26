@@ -1,8 +1,9 @@
 #!/bin/sh
 
 main() {
-	update_system
-	disable_wifi
+	#update_system
+	#disable_wifi
+	configure_pxe
 }
 
 update_system() {
@@ -16,11 +17,13 @@ update_system() {
 
 disable_wifi() {
 	print "Disabling WiFi... "
-	asroot systemctl disable wpa_supplicant
+	if systemctl is-active --quiet wpa_supplicant; then
+		asroot systemctl disable wpa_supplicant
+	fi
 	if grep -q "dtoverlay=disable-wifi" /boot/config.txt; then
 		println
 		log_info "WiFi already disabled."
-	elif [ -x /boot/config.txt.pxe.bak ]; then
+	elif [ -f /boot/config.txt.pxe.bak ]; then
 		println
 		log_error "Backup of config.txt file at /boot/config.txt.pxe.bak already exists. Please examine and remove to be able to proceed."
 	else
@@ -29,6 +32,104 @@ disable_wifi() {
 		if [ "$(ask_bool 'Reboot now?' "true")" = "true" ]; then
             asroot reboot
         fi
+	fi
+}
+
+configure_pxe() {
+	disable_swap
+	switch_network_daemon
+}
+
+disable_swap() {
+	print "Disabling swap... "
+	asroot dphys-swapfile swapoff && asroot dphys-swapfile uninstall &&	silent_exec asroot systemctl disable dphys-swapfile
+	println "Done"
+}
+
+switch_network_daemon() {
+	stop_service "dhcpcd"
+	disable_service "dhcpcd"
+	enable_service "systemd-networkd"
+	enable_service "systemd-resolved"
+	start_service "systemd-resolved"
+	link_resolve_stub
+	configure_network
+	restart_service
+	cleanup_system
+}
+
+cleanup_system() {
+	asroot apt remove openresolv network-manager
+	asroot apt autoremove
+}
+
+configure_network() {
+	if [ -f /etc/systemd/network/20-wired.network ]; then
+		log_info "Network already configured"
+	else
+		print "Configuring network... "
+		networkctl | awk '/ether/ {print "[Match]\nName="$2"\n\n[Network]\nDHCP=yes\nKeepConfiguration=yes"}' | asroot tee /etc/systemd/network/20-wired.network > /dev/null
+		println "Done"
+	fi
+}
+
+link_resolve_stub() {
+	asroot ln -sf /run/systemd/resolve/stub-resolv.conf /etc/resolv.conf
+}
+
+restart_service() {
+	service=$1
+	print "Restarting $service... "
+	asroot systemctl restart $service
+	println "Done"
+}
+
+stop_service() {
+	# Stop service
+	service=$1
+	if systemctl is-active --quiet $service; then
+		print "Stopping $service... "
+		asroot systemctl stop $service
+		println "Done"
+	else
+		log_info "$service already stopped."
+	fi
+}
+
+start_service() {
+	# Start service if not already started
+	service=$1
+	if systemctl is-active --quiet $service; then
+		log_info "$service already started."
+	else
+		print "Starting $service... "
+		asroot systemctl start $service
+		println "Done"
+	fi
+}
+
+disable_service() {
+	# Prevent service from starting after reboot
+	service=$1
+	if systemctl is-enabled --quiet $service; then
+		print "Disabling $service... "
+		asroot systemctl disable $service
+		println "Done"
+	else
+		log_info "$service already disabled."
+	fi
+
+}
+
+enable_service() {
+	# Enable service if not already enabled so it starts on every boot
+	service=$1
+	if systemctl is-enabled --quiet $service; then
+		log_info "$service already enabled."
+	else
+		print "Enabling $service... "
+		asroot systemctl enable $service
+		println "Done"
 	fi
 }
 
