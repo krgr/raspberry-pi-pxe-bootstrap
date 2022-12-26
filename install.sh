@@ -1,8 +1,8 @@
 #!/bin/sh
 
 main() {
-	#update_system
-	#disable_wifi
+	update_system
+	disable_wifi
 }
 
 update_system() {
@@ -26,29 +26,10 @@ disable_wifi() {
 	else
 		asroot sed -i.pxe.bak '/# Additional overlays and parameters are documented \/boot\/overlays\/README/a dtoverlay=disable-wifi' /boot/config.txt
 		println "Done"
-	fi
-}
-
-install() {
-    if [ "$(get_current_release)" ]; then
-        log_info "Already installed"
-        return
-    fi
-    if type=$(install_type); then
-        log_info "Installing NextDNS..."
-        log_debug "Using $type install type"
-        if "install_$type"; then
-            if [ ! -x "$NEXTDNS_BIN" ]; then
-                log_error "Installation failed: binary not installed in $NEXTDNS_BIN"
-                return 1
-            fi
-            configure
-            post_install
-            exit 0
+		if [ "$(ask_bool 'Reboot now?' "true")" = "true" ]; then
+            asroot reboot
         fi
-    else
-        return $?
-    fi
+	fi
 }
 
 log_debug() {
