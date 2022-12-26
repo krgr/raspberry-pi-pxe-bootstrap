@@ -1,8 +1,8 @@
 #!/bin/sh
 
 main() {
-	#update_system
-	#disable_wifi
+	update_system
+	disable_wifi
 	configure_pxe
 }
 
