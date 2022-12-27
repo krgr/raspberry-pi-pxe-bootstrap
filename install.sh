@@ -54,7 +54,7 @@ switch_network_daemon() {
 	start_service "systemd-resolved"
 	link_resolve_stub
 	configure_network
-	restart_service
+	restart_service "systemd-networkd"
 	cleanup_system
 }
 
