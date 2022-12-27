@@ -2,6 +2,7 @@
 
 This script is an opinionated helper to bootstrap and configure Raspberry Pi computers to boot from wired network via PXE (Preboot eXecution Environment). It will and is currently work in progress:
 
+ * Install unattended upgrades
  * Deactivate wlan
  * Deactivate swap
  * Switch network management to systemd-networks
