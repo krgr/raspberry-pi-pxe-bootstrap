@@ -122,7 +122,7 @@ init_remote_filesystems() {
 	asroot mount -t nfs -O $nfs_options $NAS_IP:$nas_volume/$pxe_folder $pxefs -vvv
 	rootfs="$pxefs/$hostname"
 	asroot mkdir -p $rootfs
-	asroot rsync -xa --info=progress2 --exclude $nfs_root / $rootfs/
+	asroot rsync -xa --delete --info=progress2 --exclude $nfs_root / $rootfs/
 
 	# create remote tftpboot filesystem (/boot)
 	tftpbootfs="$nfs_root/$tftp_folder"
@@ -136,7 +136,7 @@ init_remote_filesystems() {
 	fi
 	bootfs=$tftpbootfs/$rasppi_serial
 	asroot mkdir -p $bootfs
-	asroot rsync -xa --info=progress2 /boot/* $bootfs/
+	asroot rsync -xa --delete --info=progress2 /boot/* $bootfs/
 
 	# configure remote filesystem table
 	asroot sed -i.pxe.bak ' /boot \| \/ /d' "$rootfs/etc/fstab"
