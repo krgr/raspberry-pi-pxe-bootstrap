@@ -5,20 +5,20 @@ main() {
 
 	log_info "OS: $OS"
 
-    if [ -z "$OS" ]; then
+	if [ -z "$OS" ]; then
 #    if [ -z "$OS" ] || [ -z "$GOARCH" ] || [ -z "$GOOS" ] || [ -z "$NEXTDNS_BIN" ] || [ -z "$INSTALL_RELEASE" ]; then
-        log_error "Cannot detect running environment."
-        exit 1
-    fi
+		log_error "Cannot detect running environment."
+		exit 1
+	fi
 
-    while true; do
-        log_debug "Start install loop"
-        menu \
-            b "Bootstrap network boot" bootstrap \
-            r "Init remote filesystems only" init_remote_filesystems \
-            t "Install Tailscale" install_tailscale \
-            e "Exit" exit
-    done
+	while true; do
+		log_debug "Start install loop"
+		menu \
+			b "Bootstrap network boot" bootstrap \
+			r "Init remote filesystems only" init_remote_filesystems \
+			t "Install Tailscale" install_tailscale \
+			e "Exit" exit
+	done
 }
 
 bootstrap() {
@@ -53,8 +53,8 @@ disable_wifi() {
 		asroot sed -i.pxe.bak '/# Additional overlays and parameters are documented \/boot\/overlays\/README/a dtoverlay=disable-wifi' /boot/config.txt
 		println "Done"
 		if [ "$(ask_bool 'Reboot now?' "true")" = "true" ]; then
-            asroot reboot
-        fi
+			asroot reboot
+		fi
 	fi
 }
 
@@ -106,25 +106,37 @@ init_remote_filesystems() {
 	if [ -z $NAS_IP ]; then
 		NAS_IP="192.168.133.21"
 	fi
-	NAS_IP=$( input "Enter your NAS IP" $NAS_IP)
+	while true; do
+		input_nas_ip=$( input "Enter your NAS IP" $NAS_IP )
+		NAS_IP=$( verify_ip $input_nas_ip )
+		if [ -z $NAS_IP ]; then
+			log_error "NAS IP $input_nas_ip is invalid."
+		else
+			break
+		fi
+	done
 
 	# create remote root filesystem (/)
-	rootfs="$nfs_root/$hostname"
-	echo mkdir -p $rootfs
-	echo mount -t nfs -O $nfs_options $NAS_IP:$nas_volume/$pxe_folder/$hostname $rootfs -vvv
-	echo rsync -xa --info=progress2 --exclude $nfs_root / $rootfs/
+	pxefs="$nfs_root/$pxe_folder"
+	asroot mkdir -p $pxefs
+	asroot mount -t nfs -O $nfs_options $NAS_IP:$nas_volume/$pxe_folder $pxefs -vvv
+	rootfs="$pxefs/$hostname"
+	asroot mkdir -p $rootfs
+	asroot rsync -xa --info=progress2 --exclude $nfs_root / $rootfs/
 
 	# create remote tftpboot filesystem (/boot)
 	tftpbootfs="$nfs_root/$tftp_folder"
-	echo mkdir -p /nfs/rpi-tftpboot
-	echo mount -t nfs -O $nfs_options $NAS_IP:$nas_volume/$tftp_folder $tftpbootfs -vvv
+	asroot mkdir -p $tftpbootfs
+	asroot mount -t nfs -O $nfs_options $NAS_IP:$nas_volume/$tftp_folder $tftpbootfs -vvv
+
 	if [ -f $tftpbootfs/bootcode.bin ]; then
 		log_info "/nfs/rpi-tftpboot/bootcode.bin already exists. Skipping."
 	else
-		echo cp /boot/bootcode.bin /nfs/rpi-tftpboot/
+		asroot cp /boot/bootcode.bin $tftpbootfs/
 	fi
-	echo mkdir -p $tftpbootfs/$rasppi_serial
-	echo cp -r /boot/* $tftpbootfs/$rasppi_serial/
+	bootfs=$tftpbootfs/$rasppi_serial
+	asroot mkdir -p $bootfs
+	asroot rsync -xa --info=progress2 /boot/* $bootfs/
 }
 
 serial() {
@@ -132,7 +144,7 @@ serial() {
 }
 
 verify_ip() {
-	echo $@ | awk -F"\." ' $0 ~ /^([0-9]{1,3}\.){3}[0-9]{1,3}$/ && $1 <=255 && $2 <= 255 && $3 <= 255 && $4 <= 255 '
+	echo $@ | awk -F"." '$0 ~ /^[0-9]+\.[0-9]+\.[0-9]+\.[0-9]+$/ && $1 <=255 && $2 <=255 && $3 <= 255 && $4 <= 255'
 }
 
 install_tailscale() {
@@ -202,237 +214,236 @@ enable_service() {
 }
 
 log_debug() {
-    if [ "$DEBUG" = "1" ]; then
-        printf "\033[30;1mDEBUG: %s\033[0m\n" "$*" >&2
-    fi
+	if [ "$DEBUG" = "1" ]; then
+		printf "\033[30;1mDEBUG: %s\033[0m\n" "$*" >&2
+	fi
 }
 
 log_info() {
-    printf "INFO: %s\n" "$*" >&2
+	printf "INFO: %s\n" "$*" >&2
 }
 
 log_error() {
-    printf "\033[31mERROR: %s\033[0m\n" "$*" >&2
+	printf "\033[31mERROR: %s\033[0m\n" "$*" >&2
 }
 
 print() {
-    format=$1
-    if [ $# -gt 0 ]; then
-        shift
-    fi
-    # shellcheck disable=SC2059
-    printf "$format" "$@" >&2
+	format=$1
+	if [ $# -gt 0 ]; then
+		shift
+	fi
+	# shellcheck disable=SC2059
+	printf "$format" "$@" >&2
 }
 
 println() {
-    format=$1
-    if [ $# -gt 0 ]; then
-        shift
-    fi
-    # shellcheck disable=SC2059
-    printf "$format\n" "$@" >&2
+	format=$1
+	if [ $# -gt 0 ]; then
+		shift
+	fi
+	# shellcheck disable=SC2059
+	printf "$format\n" "$@" >&2
 }
 
 doc() {
-    # shellcheck disable=SC2059
-    printf "\033[30;1m%s\033[0m\n" "$*" >&2
+	# shellcheck disable=SC2059
+	printf "\033[30;1m%s\033[0m\n" "$*" >&2
 }
 input() {
 	prompt=$1
 	default=$2
 	if [ $# -gt 1 ]; then
-	    print "%s (default=%s):" "$prompt" "$default"
+		print "%s (default=%s):" "$prompt" "$default"
 	elif [ $# -gt 0 ]; then
-        print "%s: " "$prompt"
-    fi
-    read -r choice
-    if [ -z "$choice" ]; then
-        choice=$default
-    fi
-    echo $choice
+		print "%s: " "$prompt"
+	fi
+	read -r choice
+	if [ -z "$choice" ]; then
+		choice=$default
+	fi
+	echo $choice
 }
 
 menu() {
-    while true; do
-        n=0
-        default=
-        # output menu
-        for item in "$@"; do
-            case $((n%3)) in
-            0) # key
-                key=$item
-                if [ -z "$default" ]; then
-                    default=$key
-                fi
-                ;;
-            1) # description
-                echo "$key) $item"
-                ;;
-            esac
-            n=$((n+1))
-        done
-        print "Choice (default=%s): " "$default"
-        read -r choice
-        if [ -z "$choice" ]; then
-            choice=$default
-        fi
-        n=0
-        for item in "$@"; do
-            case $((n%3)) in
-            0) # key
-                key=$item
-                ;;
-            2) # command
-                if [ "$key" = "$choice" ]; then
-                    if ! "$item"; then
-                        log_error "$item: exit $?"
-                    fi
-                    break 2
-                fi
-                ;;
-            esac
-            n=$((n+1))
-        done
-        echo "Invalid choice"
-    done
+	while true; do
+		n=0
+		default=
+		# output menu
+		for item in "$@"; do
+			case $((n%3)) in
+			0) # key
+				key=$item
+				if [ -z "$default" ]; then
+					default=$key
+				fi
+				;;
+			1) # description
+				echo "$key) $item"
+				;;
+			esac
+			n=$((n+1))
+		done
+		print "Choice (default=%s): " "$default"
+		read -r choice
+		if [ -z "$choice" ]; then
+			choice=$default
+		fi
+		n=0
+		for item in "$@"; do
+			case $((n%3)) in
+			0) # key
+				key=$item
+				;;
+			2) # command
+				if [ "$key" = "$choice" ]; then
+					if ! "$item"; then
+						log_error "$item: exit $?"
+					fi
+					break 2
+				fi
+				;;
+			esac
+			n=$((n+1))
+		done
+		echo "Invalid choice"
+	done
 }
 
 ask_bool() {
-    msg=$1
-    default=$2
-    case $default in
-    true)
-        msg="$msg [Y|n]: "
-        ;;
-    false)
-        msg="$msg [y|N]: "
-        ;;
-    *)
-        msg="$msg (y/n): "
-    esac
-    while true; do
-        print "%s" "$msg"
-        read -r answer
-        if [ -z "$answer" ]; then
-            answer=$default
-        fi
-        case $answer in
-        y|Y|yes|YES|true)
-            echo "true"
-            return 0
-            ;;
-        n|N|no|NO|false)
-            echo "false"
-            return 0
-            ;;
-        *)
-            echo "Invalid input, use yes or no"
-            ;;
-        esac
-    done
+	msg=$1
+	default=$2
+	case $default in
+	true)
+		msg="$msg [Y|n]: "
+		;;
+	false)
+		msg="$msg [y|N]: "
+		;;
+	*)
+		msg="$msg (y/n): "
+	esac
+	while true; do
+		print "%s" "$msg"
+		read -r answer
+		if [ -z "$answer" ]; then
+			answer=$default
+		fi
+		case $answer in
+		y|Y|yes|YES|true)
+			echo "true"
+			return 0
+			;;
+		n|N|no|NO|false)
+			echo "false"
+			return 0
+			;;
+		*)
+			echo "Invalid input, use yes or no"
+			;;
+		esac
+	done
 }
 
 asroot() {
-    # Some platform (merlin) do not have the "id" command and $USER report a non root username with uid 0.
-    if [ "$(grep '^Uid:' /proc/$$/status 2>/dev/null|cut -f2)" = "0" ] || [ "$USER" = "root" ] || [ "$(id -u 2>/dev/null)" = "0" ]; then
-        "$@"
-    elif [ "$(command -v sudo 2>/dev/null)" ]; then
-        sudo "$@"
-    else
-        echo "Root required"
-        su -m root -c "$*"
-    fi
+	# Some platform (merlin) do not have the "id" command and $USER report a non root username with uid 0.
+	if [ "$(grep '^Uid:' /proc/$$/status 2>/dev/null|cut -f2)" = "0" ] || [ "$USER" = "root" ] || [ "$(id -u 2>/dev/null)" = "0" ]; then
+		"$@"
+	elif [ "$(command -v sudo 2>/dev/null)" ]; then
+		sudo "$@"
+	else
+		echo "Root required"
+		su -m root -c "$*"
+	fi
 }
 
 silent_exec() {
-    if [ "$DEBUG" = 1 ]; then
-        "$@"
-    else
-        if ! out=$("$@" 2>&1); then
-            rt=$?
-            println "\033[30;1m%s\033[0m" "$out"
-            return $rt
-        fi
-    fi
+	if [ "$DEBUG" = 1 ]; then
+		"$@"
+	else
+		if ! out=$("$@" 2>&1); then
+			rt=$?
+			println "\033[30;1m%s\033[0m" "$out"
+			return $rt
+		fi
+	fi
 }
 
 detect_os() {
-    if [ "$FORCE_OS" ]; then
-        echo "$FORCE_OS"; return 0
-    fi
-    case $(uname -s) in
-    Linux)
-        case $(uname -o) in
-        GNU/Linux|Linux)
-            if grep -q -e '^EdgeRouter' -e '^UniFiSecurityGateway' /etc/version 2> /dev/null; then
-                echo "edgeos"; return 0
-            fi
-            if uname -u 2>/dev/null | grep -q '^synology'; then
-                echo "synology"; return 0
-            fi
-            # shellcheck disable=SC1091
-            dist=$(. /etc/os-release; echo "$ID")
-            case $dist in
-            ubios)
-                if [ -z "$(command -v podman)" ]; then
-                    log_error "This version of UnifiOS is not supported. Make sure you run version 1.7.0 or above."
-                    return 1
-                fi
-                echo "$dist"; return 0
-                ;;
-            debian|ubuntu|elementary|raspbian|centos|fedora|rhel|arch|manjaro|openwrt|clear-linux-os|linuxmint|opensuse-tumbleweed|opensuse-leap|opensuse|solus|pop|neon|overthebox|sparky|vyos|void|alpine|Deepin|gentoo|steamos)
-                echo "$dist"; return 0
-                ;;
-            esac
-            # shellcheck disable=SC1091
-            for dist in $(. /etc/os-release; echo "$ID_LIKE"); do
-                case $dist in
-                debian|ubuntu|rhel|fedora|openwrt)
-                    log_debug "Using ID_LIKE"
-                    echo "$dist"; return 0
-                    ;;
-                esac
-            done
-            ;;
-        ASUSWRT-Merlin*)
-            echo "asuswrt-merlin"; return 0
-            ;;
-        DD-WRT)
-            echo "ddwrt"; return 0
-        esac
-        ;;
-    Darwin)
-        echo "darwin"; return 0
-        ;;
-    FreeBSD)
-        if [ -f /etc/platform ]; then
-            case $(cat /etc/platform) in
-            pfSense)
-                echo "pfsense"; return 0
-                ;;
-            esac
-        fi
-        if [ -x /usr/local/sbin/opnsense-version ]; then
-            case $(/usr/local/sbin/opnsense-version -N) in
-            OPNsense)
-                echo "opnsense"; return 0
-                ;;
-            esac
-        fi
-        echo "freebsd"; return 0
-        ;;
-    NetBSD)
-        echo "netbsd"; return 0
-        ;;
-    OpenBSD)
-        echo "openbsd"; return 0
-        ;;
-    *)
-    esac
-    log_error "Unsupported OS: $(uname -o) $(grep ID "/etc/os-release" 2>/dev/null | xargs)"
-    return 1
+	if [ "$FORCE_OS" ]; then
+		echo "$FORCE_OS"; return 0
+	fi
+	case $(uname -s) in
+	Linux)
+		case $(uname -o) in
+		GNU/Linux|Linux)
+			if grep -q -e '^EdgeRouter' -e '^UniFiSecurityGateway' /etc/version 2> /dev/null; then
+				echo "edgeos"; return 0
+			fi
+			if uname -u 2>/dev/null | grep -q '^synology'; then
+				echo "synology"; return 0
+			fi
+			# shellcheck disable=SC1091
+			dist=$(. /etc/os-release; echo "$ID")
+			case $dist in
+			ubios)
+				if [ -z "$(command -v podman)" ]; then
+					log_error "This version of UnifiOS is not supported. Make sure you run version 1.7.0 or above."
+					return 1
+				fi
+				echo "$dist"; return 0
+				;;
+			debian|ubuntu|elementary|raspbian|centos|fedora|rhel|arch|manjaro|openwrt|clear-linux-os|linuxmint|opensuse-tumbleweed|opensuse-leap|opensuse|solus|pop|neon|overthebox|sparky|vyos|void|alpine|Deepin|gentoo|steamos)
+				echo "$dist"; return 0
+				;;
+			esac
+			# shellcheck disable=SC1091
+			for dist in $(. /etc/os-release; echo "$ID_LIKE"); do
+				case $dist in
+				debian|ubuntu|rhel|fedora|openwrt)
+					log_debug "Using ID_LIKE"
+					echo "$dist"; return 0
+					;;
+				esac
+			done
+			;;
+		ASUSWRT-Merlin*)
+			echo "asuswrt-merlin"; return 0
+			;;
+		DD-WRT)
+			echo "ddwrt"; return 0
+		esac
+		;;
+	Darwin)
+		echo "darwin"; return 0
+		;;
+	FreeBSD)
+		if [ -f /etc/platform ]; then
+			case $(cat /etc/platform) in
+			pfSense)
+				echo "pfsense"; return 0
+				;;
+			esac
+		fi
+		if [ -x /usr/local/sbin/opnsense-version ]; then
+			case $(/usr/local/sbin/opnsense-version -N) in
+			OPNsense)
+				echo "opnsense"; return 0
+				;;
+			esac
+		fi
+		echo "freebsd"; return 0
+		;;
+	NetBSD)
+		echo "netbsd"; return 0
+		;;
+	OpenBSD)
+		echo "openbsd"; return 0
+		;;
+	*)
+	esac
+	log_error "Unsupported OS: $(uname -o) $(grep ID "/etc/os-release" 2>/dev/null | xargs)"
+	return 1
 }
-
 
 umask 0022
 main
