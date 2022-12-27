@@ -4,12 +4,20 @@ main() {
 	OS=$(detect_os)
 
 	log_info "OS: $OS"
+	println
 
 	if [ -z "$OS" ]; then
 #    if [ -z "$OS" ] || [ -z "$GOARCH" ] || [ -z "$GOOS" ] || [ -z "$NEXTDNS_BIN" ] || [ -z "$INSTALL_RELEASE" ]; then
 		log_error "Cannot detect running environment."
 		exit 1
 	fi
+
+	if [ $# -gt 0 ]; then
+		RUN_COMMAND=$1
+	fi
+	case "$RUN_COMMAND" in
+		bootstrap|update_system|disable_wifi|disable_swap|switch_network_daemon|init_remote_filesystems|bootloader_config) "$RUN_COMMAND"; exit ;;
+	esac
 
 	while true; do
 		log_debug "Start install loop"
@@ -30,11 +38,17 @@ bootstrap() {
 
 update_system() {
 	print "Updating Package lists... "
-	silent_exec asroot apt update
+	silent_exec asroot apt-get update
 	println "Done"
+	asroot apt-get -y dist-upgrade
+	if [ "$(ask_bool 'Install unattended upgrades?' "true")" = "true" ]; then
+		install_unattended_upgrades
+	fi
+}
 
-	apt list --upgradable
-	asroot apt full-upgrade
+install_unattended_upgrades() {
+	asroot apt-get -y install unattended-upgrades apt-config-auto-update
+	# stay with defaults (security updates only, no automatic reboot)
 }
 
 disable_wifi() {
@@ -193,12 +207,12 @@ bootloader_config() {
 }
 
 install_tailscale() {
-	silent_exec asroot apt update
-	asroot apt install apt-transport-https
+	silent_exec asroot apt-get update
+	asroot apt-get -y install apt-transport-https
 	curl -fsSL https://pkgs.tailscale.com/stable/raspbian/bullseye.noarmor.gpg | sudo tee /usr/share/keyrings/tailscale-archive-keyring.gpg > /dev/null
 	curl -fsSL https://pkgs.tailscale.com/stable/raspbian/bullseye.tailscale-keyring.list | sudo tee /etc/apt/sources.list.d/tailscale.list
-	asroot apt update
-	asroot apt install tailscale
+	silent_exec asroot apt-get update
+	asroot apt-get -y install tailscale
 	asroot tailscale up --ssh
 }
 
@@ -491,4 +505,4 @@ detect_os() {
 }
 
 umask 0022
-main
+main $@
