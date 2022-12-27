@@ -1,6 +1,6 @@
 # Raspberry Pi PXE Bootstrapping script
 
-This script is an opinionated helper to bootstrap and configure Raspberry Pi computers to boot from wired network via PXE (Preboot eXecution Environment). It is currently work in progress:
+This script is an opinionated helper to bootstrap and configure Raspberry Pi computers to boot from wired network via PXE (Preboot eXecution Environment). I am developing it along writing a [more detailed blog post](https://krgr.dev/blog/raspberry-pi-pxe-kubernetes-cluster/) about out how to bootstrap manually. It is currently work in progress:
 
  * Upggrde system packages
  * Install unattended upgrades
