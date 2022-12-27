@@ -8,8 +8,8 @@ This script is an opinionated helper to bootstrap and configure Raspberry Pi com
  * Switch network address resolution to systwmd-resolved
  * Configure network interface
  * Initialize remote filesystems
- * TODO: Configure filesystem table and boot options
- * TODO: Update network boot EEPROM
+ * Configure filesystem table and boot options
+ * Update network boot EEPROM
 
 ## Usage
 
@@ -26,5 +26,3 @@ If you clone the repository locally, you can run it locally via `./install.sh`.
 The script recognizes the following environment variables
 
  * NAS_IP: pass the default IP to use for mounting network storage during the NFS initialization.
- * TODO: TFTP_IP: pass the default IP for the TFTP / DHCP server
-
