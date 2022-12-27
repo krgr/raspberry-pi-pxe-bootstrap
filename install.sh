@@ -14,9 +14,8 @@ main() {
 	while true; do
 		log_debug "Start install loop"
 		menu \
-			b "Bootstrap network boot (incl. remote filesystems)" bootstrap \
-			f "Init/update remote filesystems only" init_remote_filesystems \
-			t "Optional: Install Tailscale" install_tailscale \
+			b "Bootstrap network boot " bootstrap \
+			c "Check bootloader config" bootloader_config \
 			e "Exit" exit
 	done
 }
@@ -52,9 +51,7 @@ disable_wifi() {
 	else
 		asroot sed -i.pxe.bak '/# Additional overlays and parameters are documented \/boot\/overlays\/README/a dtoverlay=disable-wifi' /boot/config.txt
 		println "Done"
-		if [ "$(ask_bool 'Reboot now?' "true")" = "true" ]; then
-			asroot reboot
-		fi
+		ask_for_reboot
 	fi
 }
 
@@ -74,6 +71,9 @@ switch_network_daemon() {
 	configure_network
 	restart_service "systemd-networkd"
 	cleanup_system
+	if [ "$(ask_bool 'Install Tailscale?' "true")" = "true" ]; then
+		install_tailscale
+	fi
 }
 
 cleanup_system() {
@@ -130,13 +130,48 @@ init_remote_filesystems() {
 	asroot mount -t nfs -O $nfs_options $NAS_IP:$nas_volume/$tftp_folder $tftpbootfs -vvv
 
 	if [ -f $tftpbootfs/bootcode.bin ]; then
-		log_info "/nfs/rpi-tftpboot/bootcode.bin already exists. Skipping."
+		log_info "$tftpbootfs/bootcode.bin already exists. Skipping."
 	else
 		asroot cp /boot/bootcode.bin $tftpbootfs/
 	fi
 	bootfs=$tftpbootfs/$rasppi_serial
 	asroot mkdir -p $bootfs
 	asroot rsync -xa --info=progress2 /boot/* $bootfs/
+
+	# configure remote filesystem table
+	asroot sed -i.pxe.bak ' /boot \| \/ /d' "$rootfs/etc/fstab"
+	echo  "$NAS_IP:$nas_volume/$tftp_folder/$rasppi_serial /boot nfs defaults,proto=tcp 0 0" | asroot tee -a "$rootfs/etc/fstab"
+
+	# configure network boot kernel options
+	echo "console=serial0,115200 console=tty1 root=/dev/nfs nfsroot=$NAS_IP:$nas_volume/$pxe_folder/$hostname rw ip=dhcp elevator=deadline rootwait" | asroot tee "$bootfs/cmdline.txt"
+
+	# configure EEPROM firmware
+	firmware_folder="/lib/firmware/raspberrypi/bootloader/stable/"
+	firmware=$( ls -r /lib/firmware/raspberrypi/bootloader/stable/pieeprom-2022-* | head -1 )
+	cp $firmware pieeprom.bin
+	cat >bootconf.txt << EOL
+[all]
+BOOT_UART=0
+WAKE_ON_GPIO=1
+POWER_OFF_ON_HALT=0
+DHCP_TIMEOUT=45000
+DHCP_REQ_TIMEOUT=4000
+TFTP_FILE_TIMEOUT=30000
+TFTP_IP=$NAS_IP
+TFTP_PREFIX=0
+ENABLE_SELF_UPDATE=1
+DISABLE_HDMI=0
+BOOT_ORDER=0x21
+SD_BOOT_MAX_RETRIES=3
+NET_BOOT_MAX_RETRIES=5 
+EOL
+
+	rpi-eeprom-config --out pieeprom-new.bin --config bootconf.txt pieeprom.bin
+	println "Flashing Raspberry Pi EEPROM... "
+	asroot rpi-eeprom-update -d -f ./pieeprom-new.bin
+	println "Done"
+	rm pieeprom.bin pieeprom-new.bin bootconf.txt
+	ask_for_reboot
 }
 
 serial() {
@@ -145,6 +180,16 @@ serial() {
 
 verify_ip() {
 	echo $@ | awk -F"." '$0 ~ /^[0-9]+\.[0-9]+\.[0-9]+\.[0-9]+$/ && $1 <=255 && $2 <=255 && $3 <= 255 && $4 <= 255'
+}
+
+ask_for_reboot() {
+	if [ "$(ask_bool 'Reboot now?' "true")" = "true" ]; then
+		asroot reboot
+	fi
+}
+
+bootloader_config() {
+	vcgencmd bootloader_config
 }
 
 install_tailscale() {
