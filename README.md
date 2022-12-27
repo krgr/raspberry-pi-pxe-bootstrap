@@ -35,7 +35,7 @@ The script by default presents a menu that allows you to select to (b)ootstrap n
 
 Example:
 ```bash
-./install update_system
+./install.sh update_system
 ```
 
 ### Environment variables
