@@ -14,9 +14,9 @@ main() {
 	while true; do
 		log_debug "Start install loop"
 		menu \
-			b "Bootstrap network boot" bootstrap \
-			r "Init remote filesystems only" init_remote_filesystems \
-			t "Install Tailscale" install_tailscale \
+			b "Bootstrap network boot (incl. remote filesystems)" bootstrap \
+			f "Init/update remote filesystems only" init_remote_filesystems \
+			t "Optional: Install Tailscale" install_tailscale \
 			e "Exit" exit
 	done
 }
