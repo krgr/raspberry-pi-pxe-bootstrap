@@ -1,9 +1,30 @@
 #!/bin/sh
 
 main() {
+	OS=$(detect_os)
+
+	log_info "OS: $OS"
+
+    if [ -z "$OS" ]; then
+#    if [ -z "$OS" ] || [ -z "$GOARCH" ] || [ -z "$GOOS" ] || [ -z "$NEXTDNS_BIN" ] || [ -z "$INSTALL_RELEASE" ]; then
+        log_error "Cannot detect running environment."
+        exit 1
+    fi
+
+    while true; do
+        log_debug "Start install loop"
+        menu \
+            b "Bootstrap network boot" bootstrap \
+            t "Install Tailscale" install_tailscale \
+            e "Exit" exit
+    done
+}
+
+bootstrap() {
 	update_system
 	disable_wifi
-	configure_pxe
+	disable_swap
+	switch_network_daemon
 }
 
 update_system() {
@@ -33,11 +54,6 @@ disable_wifi() {
             asroot reboot
         fi
 	fi
-}
-
-configure_pxe() {
-	disable_swap
-	switch_network_daemon
 }
 
 disable_swap() {
@@ -75,6 +91,16 @@ configure_network() {
 
 link_resolve_stub() {
 	asroot ln -sf /run/systemd/resolve/stub-resolv.conf /etc/resolv.conf
+}
+
+install_tailscale() {
+	silent_exec asroot apt update
+	asroot apt install apt-transport-https
+	curl -fsSL https://pkgs.tailscale.com/stable/raspbian/bullseye.noarmor.gpg | sudo tee /usr/share/keyrings/tailscale-archive-keyring.gpg > /dev/null
+	curl -fsSL https://pkgs.tailscale.com/stable/raspbian/bullseye.tailscale-keyring.list | sudo tee /etc/apt/sources.list.d/tailscale.list
+	asroot apt update
+	asroot apt install tailscale
+	asroot tailscale up --ssh
 }
 
 restart_service() {
@@ -272,6 +298,84 @@ silent_exec() {
         fi
     fi
 }
+
+detect_os() {
+    if [ "$FORCE_OS" ]; then
+        echo "$FORCE_OS"; return 0
+    fi
+    case $(uname -s) in
+    Linux)
+        case $(uname -o) in
+        GNU/Linux|Linux)
+            if grep -q -e '^EdgeRouter' -e '^UniFiSecurityGateway' /etc/version 2> /dev/null; then
+                echo "edgeos"; return 0
+            fi
+            if uname -u 2>/dev/null | grep -q '^synology'; then
+                echo "synology"; return 0
+            fi
+            # shellcheck disable=SC1091
+            dist=$(. /etc/os-release; echo "$ID")
+            case $dist in
+            ubios)
+                if [ -z "$(command -v podman)" ]; then
+                    log_error "This version of UnifiOS is not supported. Make sure you run version 1.7.0 or above."
+                    return 1
+                fi
+                echo "$dist"; return 0
+                ;;
+            debian|ubuntu|elementary|raspbian|centos|fedora|rhel|arch|manjaro|openwrt|clear-linux-os|linuxmint|opensuse-tumbleweed|opensuse-leap|opensuse|solus|pop|neon|overthebox|sparky|vyos|void|alpine|Deepin|gentoo|steamos)
+                echo "$dist"; return 0
+                ;;
+            esac
+            # shellcheck disable=SC1091
+            for dist in $(. /etc/os-release; echo "$ID_LIKE"); do
+                case $dist in
+                debian|ubuntu|rhel|fedora|openwrt)
+                    log_debug "Using ID_LIKE"
+                    echo "$dist"; return 0
+                    ;;
+                esac
+            done
+            ;;
+        ASUSWRT-Merlin*)
+            echo "asuswrt-merlin"; return 0
+            ;;
+        DD-WRT)
+            echo "ddwrt"; return 0
+        esac
+        ;;
+    Darwin)
+        echo "darwin"; return 0
+        ;;
+    FreeBSD)
+        if [ -f /etc/platform ]; then
+            case $(cat /etc/platform) in
+            pfSense)
+                echo "pfsense"; return 0
+                ;;
+            esac
+        fi
+        if [ -x /usr/local/sbin/opnsense-version ]; then
+            case $(/usr/local/sbin/opnsense-version -N) in
+            OPNsense)
+                echo "opnsense"; return 0
+                ;;
+            esac
+        fi
+        echo "freebsd"; return 0
+        ;;
+    NetBSD)
+        echo "netbsd"; return 0
+        ;;
+    OpenBSD)
+        echo "openbsd"; return 0
+        ;;
+    *)
+    esac
+    log_error "Unsupported OS: $(uname -o) $(grep ID "/etc/os-release" 2>/dev/null | xargs)"
+    return 1
+}
+
 
 umask 0022
 main
