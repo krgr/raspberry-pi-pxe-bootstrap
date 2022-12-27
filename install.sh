@@ -15,6 +15,7 @@ main() {
         log_debug "Start install loop"
         menu \
             b "Bootstrap network boot" bootstrap \
+            r "Init remote filesystems only" init_remote_filesystems \
             t "Install Tailscale" install_tailscale \
             e "Exit" exit
     done
@@ -25,6 +26,7 @@ bootstrap() {
 	disable_wifi
 	disable_swap
 	switch_network_daemon
+	init_remote_filesystems
 }
 
 update_system() {
@@ -93,6 +95,46 @@ link_resolve_stub() {
 	asroot ln -sf /run/systemd/resolve/stub-resolv.conf /etc/resolv.conf
 }
 
+init_remote_filesystems() {
+	nfs_root="/nfs"
+	hostname="$( hostname )"
+	nas_volume="/volume1"
+	tftp_folder="rpi-tftpboot"
+	pxe_folder="rpi-pxe"
+	nfs_options="proto=tcp,port=2049,rw,all_squash,anonuid=1001,anongid=1001"
+	rasppi_serial="$( serial )"
+	if [ -z $NAS_IP ]; then
+		NAS_IP="192.168.133.21"
+	fi
+	NAS_IP=$( input "Enter your NAS IP" $NAS_IP)
+
+	# create remote root filesystem (/)
+	rootfs="$nfs_root/$hostname"
+	echo mkdir -p $rootfs
+	echo mount -t nfs -O $nfs_options $NAS_IP:$nas_volume/$pxe_folder/$hostname $rootfs -vvv
+	echo rsync -xa --info=progress2 --exclude $nfs_root / $rootfs/
+
+	# create remote tftpboot filesystem (/boot)
+	tftpbootfs="$nfs_root/$tftp_folder"
+	echo mkdir -p /nfs/rpi-tftpboot
+	echo mount -t nfs -O $nfs_options $NAS_IP:$nas_volume/$tftp_folder $tftpbootfs -vvv
+	if [ -f $tftpbootfs/bootcode.bin ]; then
+		log_info "/nfs/rpi-tftpboot/bootcode.bin already exists. Skipping."
+	else
+		echo cp /boot/bootcode.bin /nfs/rpi-tftpboot/
+	fi
+	echo mkdir -p $tftpbootfs/$rasppi_serial
+	echo cp -r /boot/* $tftpbootfs/$rasppi_serial/
+}
+
+serial() {
+	vcgencmd otp_dump | grep 28: | sed s/.*://g
+}
+
+verify_ip() {
+	echo $@ | awk -F"\." ' $0 ~ /^([0-9]{1,3}\.){3}[0-9]{1,3}$/ && $1 <=255 && $2 <= 255 && $3 <= 255 && $4 <= 255 '
+}
+
 install_tailscale() {
 	silent_exec asroot apt update
 	asroot apt install apt-transport-https
@@ -106,7 +148,7 @@ install_tailscale() {
 restart_service() {
 	service=$1
 	print "Restarting $service... "
-	asroot systemctl restart $service
+	silent_exec asroot systemctl restart $service
 	println "Done"
 }
 
@@ -115,7 +157,7 @@ stop_service() {
 	service=$1
 	if systemctl is-active --quiet $service; then
 		print "Stopping $service... "
-		asroot systemctl stop $service
+		silent_exec asroot systemctl stop $service
 		println "Done"
 	else
 		log_info "$service already stopped."
@@ -129,7 +171,7 @@ start_service() {
 		log_info "$service already started."
 	else
 		print "Starting $service... "
-		asroot systemctl start $service
+		silent_exec asroot systemctl start $service
 		println "Done"
 	fi
 }
@@ -139,7 +181,7 @@ disable_service() {
 	service=$1
 	if systemctl is-enabled --quiet $service; then
 		print "Disabling $service... "
-		asroot systemctl disable $service
+		silent_exec asroot systemctl disable $service
 		println "Done"
 	else
 		log_info "$service already disabled."
@@ -154,7 +196,7 @@ enable_service() {
 		log_info "$service already enabled."
 	else
 		print "Enabling $service... "
-		asroot systemctl enable $service
+		silent_exec asroot systemctl enable $service
 		println "Done"
 	fi
 }
@@ -195,20 +237,35 @@ doc() {
     # shellcheck disable=SC2059
     printf "\033[30;1m%s\033[0m\n" "$*" >&2
 }
+input() {
+	prompt=$1
+	default=$2
+	if [ $# -gt 1 ]; then
+	    print "%s (default=%s):" "$prompt" "$default"
+	elif [ $# -gt 0 ]; then
+        print "%s: " "$prompt"
+    fi
+    read -r choice
+    if [ -z "$choice" ]; then
+        choice=$default
+    fi
+    echo $choice
+}
 
 menu() {
     while true; do
         n=0
         default=
+        # output menu
         for item in "$@"; do
             case $((n%3)) in
-            0)
+            0) # key
                 key=$item
                 if [ -z "$default" ]; then
                     default=$key
                 fi
                 ;;
-            1)
+            1) # description
                 echo "$key) $item"
                 ;;
             esac
@@ -222,10 +279,10 @@ menu() {
         n=0
         for item in "$@"; do
             case $((n%3)) in
-            0)
+            0) # key
                 key=$item
                 ;;
-            2)
+            2) # command
                 if [ "$key" = "$choice" ]; then
                     if ! "$item"; then
                         log_error "$item: exit $?"
