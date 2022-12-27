@@ -26,7 +26,7 @@ If you clone the repository locally, you can run it locally via `./install.sh`.
 The script by default presents a menu that allows you to select to (b)ootstrap netwoork boot, (c)heck bootloader config, or (e)exit. It will ask for reboots, and you need to run the script multiple (3) times to finish the full bootstrapping. if you want to execute just parts of the script, you can pass the corresponding functions as a parameter. The accepted parameters are:
 
  * bootstrap: simply bypassing the menu and starting a full bootstrap
- * update_system: (1. step) update packages, install unattended upgrades
+ * update_system: update packages, install unattended upgrades
  * disable_wifi: disable wpa_supplicant, configure disabled wifi
  * disable_swap: disables the local swap file
  * switch_network_daemon: switches from dhcpcd and openresolv to systemd-networkd and -resolved
