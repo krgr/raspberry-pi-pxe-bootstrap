@@ -142,8 +142,8 @@ init_remote_filesystems() {
 	asroot sed -i.pxe.bak ' /boot \| \/ /d' "$rootfs/etc/fstab"
 	echo  "$NAS_IP:$nas_volume/$tftp_folder/$rasppi_serial /boot nfs defaults,proto=tcp 0 0" | asroot tee -a "$rootfs/etc/fstab"
 
-	# configure network boot kernel options
-	echo "console=serial0,115200 console=tty1 root=/dev/nfs nfsroot=$NAS_IP:$nas_volume/$pxe_folder/$hostname rw ip=dhcp elevator=deadline rootwait" | asroot tee "$bootfs/cmdline.txt"
+	# configure network boot kernel options (add cgroup stuff already for Kubernetes)
+	echo "console=serial0,115200 console=tty1 root=/dev/nfs nfsroot=$NAS_IP:$nas_volume/$pxe_folder/$hostname rw ip=dhcp elevator=deadline rootwait cgroup_memory=1 cgroup_enable=memory" | asroot tee "$bootfs/cmdline.txt"
 
 	# configure EEPROM firmware
 	firmware_folder="/lib/firmware/raspberrypi/bootloader/stable/"
