@@ -41,6 +41,8 @@ update_system() {
 	silent_exec asroot apt-get update
 	println "Done"
 	asroot apt-get -y dist-upgrade
+	# Screen makes sense to install for most headless systems
+	asroot apt-get -y install screen
 	if [ "$(ask_bool 'Install unattended upgrades?' "true")" = "true" ]; then
 		install_unattended_upgrades
 	fi
